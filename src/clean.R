@@ -13,13 +13,13 @@ scores <-  read_csv("raw/2023_scorecard.csv")
 
 scores <- scores %>%
   mutate(grade = case_when(
-    Grade == 'A' ~ "More Stict",
-    Grade == 'A-' ~ "More Stict",
-    Grade == 'B+' ~ "More Stict",
-    Grade == 'B' ~ "More Stict",
-    Grade == 'B-' ~ "More Stict",
-    Grade == 'C+' ~ "More Stict",
-    TRUE ~ 'Less Stict')
+    Grade == 'A' ~ "More Strict",
+    Grade == 'A-' ~ "More Strict",
+    Grade == 'B+' ~ "More Strict",
+    Grade == 'B' ~ "More Strict",
+    Grade == 'B-' ~ "More Strict",
+    Grade == 'C+' ~ "More Strict",
+    TRUE ~ 'Less Strict')
     )
 ################################################################################
 # Cleaning function
@@ -63,7 +63,14 @@ clean_suicide_data <- function(file_path, replace_suppressed = 5) {
   suicide_data <- merge(suicide_data, scores, by = 'State')
   
   suicide_data$Year <- as.numeric(suicide_data$Year)
-
+  
+  suicide_data$AgeGroup <- cut(
+    suicide_data$Age,
+    breaks = c(12, 20, 30, 40, 50, 60, 70, 80),
+    labels = c('12–20', '21–30', '31–40', '41–50',
+               '51–60', '61-70', '71-80'),
+    include.lowest = TRUE)
+  
   suicide_data$YearGroup <- cut(
     suicide_data$Year,
     breaks = c(2000, 2014, 2021),
@@ -72,7 +79,8 @@ clean_suicide_data <- function(file_path, replace_suppressed = 5) {
   )
   
   suicide_data <- suicide_data %>%
-    select(State, Year, Age, Sex, Deaths, Population, grade, YearGroup) %>%
+    select(State, Year, Age, AgeGroup, Sex, Deaths,
+           Population, grade, State, YearGroup) %>%
     filter(Age >= 12, Age <= 80)
   
   return(suicide_data)
@@ -118,22 +126,6 @@ avg_deaths.all <- suicide.all %>%
 avg_deaths <- bind_rows(avg_deaths.firearm, avg_deaths.nonfirearm, avg_deaths.all)
 
 
-
-avg_deaths %>%
-  filter(YearGroup == "2015-2021") %>%
-  mutate(group = paste(category, grade)) %>%
-  ggplot(aes(x = Age, y = AvgDeathsPer100k, 
-             color = Sex, shape=grade, linetype=grade)) +
-  geom_smooth(aes(fill = Sex)) +
-  facet_wrap(~category) +
-  scale_color_nejm() +
-  labs(title = "Average Deaths per 100,000 by Age",
-       x = "Age",
-       y = "Average Deaths per 100,000") +
-  theme_minimal()
-
-
-library(ggplot2)
 library(ggthemes) # for additional themes
 library(RColorBrewer) # for color palettes
 
@@ -168,8 +160,8 @@ avg_deaths %>%
                           presence of these less stable estimates.",140),
        x = "Age",
        y = "Average Deaths per 100,000",
-       color = "Sex",
-       fill = "Sex",
+       color = "Gender",
+       fill = "Gender",
        shape = "Annual Gun Law Scorecard",
        linetype = "Annual Gun Law Scorecard") +
   theme_bw(base_size = 14) + # Increase the base font size
@@ -187,8 +179,95 @@ ggsave("outputs/avg_deaths.png", width = 9, height = 6, dpi = 300)
 
 # Note: Adjust the size parameters and palette choices to fit your preferences.
 
+avg_deaths.firearm <- suicide.firearm %>%
+  group_by(AgeGroup, grade, Sex, YearGroup, State) %>%
+  summarise(AvgDeathsPer100k = sum(FirearmDeaths, na.rm=T) / 
+              sum(Population, na.rm=T) * 100000,
+            .groups = 'drop') %>%
+  mutate(category = 'Firearm')
+
+avg_deaths.nonfirearm <- suicide.nonfirearm %>%
+  group_by(AgeGroup, grade, Sex, YearGroup, State) %>%
+  summarise(AvgDeathsPer100k = sum(NonFirearmDeaths, na.rm=T) / 
+              sum(Population, na.rm=T) * 100000,
+            .groups = 'drop') %>%
+  mutate(category = 'Non-Firearm')
+
+avg_deaths.all <- suicide.all %>%
+  group_by(AgeGroup, grade, Sex, YearGroup, State) %>%
+  summarise(AvgDeathsPer100k = sum(Deaths, na.rm=T) / 
+              sum(Population, na.rm=T) * 100000,
+            .groups = 'drop') %>%
+  mutate(category = 'All')
 
 
+avg_deaths <- bind_rows(
+  avg_deaths.firearm, avg_deaths.nonfirearm, avg_deaths.all
+  ) %>% filter(YearGroup == '2015-2021')
+
+
+# generate summary statistics for the average deaths per 100,000 by Sex and Category for different age groups
+glimpse(avg_deaths)
+
+library(dplyr)
+
+# Assuming 'grade' contains the "Less Strict" vs "More Strict" designations
+# Compute average differences within each AgeGroup, Sex, and category
+avg_differences <- avg_deaths %>%
+  group_by(Sex, category, grade) %>%
+  summarize(AvgDeaths = mean(AvgDeathsPer100k, na.rm = TRUE)) %>%
+  ungroup() %>%
+  # Create a wider format to prepare for difference calculation
+  spread(key = grade, value = AvgDeaths) %>%
+  # Compute the difference between "More Strict" and "Less Strict"
+  mutate(`Difference (More Strict AvgDeathsPer100k - Less Strict AvgDeathsPer100k` = `More Strict` - `Less Strict`) %>%
+  # Select only the relevant columns for the output
+  select(Sex, category, `Difference (More Strict AvgDeathsPer100k - Less Strict AvgDeathsPer100k`)
+
+# Perform a significance test for each group
+# Assuming you have a binary variable for strictness in the original data
+# This example uses a t-test as a placeholder
+significance_tests <- avg_deaths %>%
+  group_by(Sex, category) %>%
+  summarize(
+    t_value = t.test(AvgDeathsPer100k ~ grade)$statistic,
+    p_value = t.test(AvgDeathsPer100k ~ grade)$p.value
+  ) %>%
+  ungroup()
+
+# Merge the average differences with significance test results
+final_results <- left_join(avg_differences, significance_tests, by = c("Sex", "category"))
+
+# Inspect the final results
+print(final_results)
+
+write.csv(final_results, "outputs/differences_by_policyenv_totals.csv", row.names = FALSE)
+
+avg_deaths.firearm <- suicide.firearm %>%
+  group_by(AgeGroup, grade, Sex, YearGroup) %>%
+  summarise(AvgDeathsPer100k = sum(FirearmDeaths, na.rm=T) / 
+              sum(Population, na.rm=T) * 100000,
+            .groups = 'drop') %>%
+  mutate(category = 'Firearm')
+
+avg_deaths.nonfirearm <- suicide.nonfirearm %>%
+  group_by(AgeGroup, grade, Sex, YearGroup) %>%
+  summarise(AvgDeathsPer100k = sum(NonFirearmDeaths, na.rm=T) / 
+              sum(Population, na.rm=T) * 100000,
+            .groups = 'drop') %>%
+  mutate(category = 'Non-Firearm')
+
+avg_deaths.all <- suicide.all %>%
+  group_by(AgeGroup, grade, Sex, YearGroup) %>%
+  summarise(AvgDeathsPer100k = sum(Deaths, na.rm=T) / 
+              sum(Population, na.rm=T) * 100000,
+            .groups = 'drop') %>%
+  mutate(category = 'All')
+
+
+avg_deaths <- bind_rows(avg_deaths.firearm, avg_deaths.nonfirearm, avg_deaths.all)
+
+glimpse(avg_deaths)
 
 
 avg_deaths %>%
@@ -341,6 +420,59 @@ ggplot(avg_deaths, aes(x = Age, y = AvgDeathsPer100k, fill = category)) +
   labs(title = 'Title: Low Grade vs High Grade over Time',
        fill = 'Grade') +
   theme_minimal() 
+
+
+
+
+avg_deaths.firearm <- suicide.firearm %>%
+  group_by(Age, State, Sex, YearGroup) %>%
+  summarise(AvgDeathsPer100k = sum(FirearmDeaths, na.rm=T) / 
+              sum(Population, na.rm=T) * 100000,
+            .groups = 'drop',) %>%
+  mutate(category = 'Firearm')
+
+avg_deaths.nonfirearm <- suicide.nonfirearm %>%
+  group_by(Age, State, Sex, YearGroup) %>%
+  summarise(AvgDeathsPer100k = sum(NonFirearmDeaths, na.rm=T) / 
+              sum(Population, na.rm=T) * 100000,
+            .groups = 'drop') %>%
+  mutate(category = 'Non-Firearm')
+
+avg_deaths.all <- suicide.all %>%
+  group_by(Age, State, Sex, YearGroup) %>%
+  summarise(AvgDeathsPer100k = sum(Deaths, na.rm=T) / 
+              sum(Population, na.rm=T) * 100000,
+            .groups = 'drop') %>%
+  mutate(category = 'All')
+
+avg_deaths <- bind_rows(avg_deaths.firearm, avg_deaths.nonfirearm, avg_deaths.all)
+
+avg_deaths <- merge(avg_deaths, scores, on=c('State'))
+
+avg_deaths.male <- avg_deaths %>%
+  filter(Sex == 'Males', YearGroup == '2015-2021',
+         category == 'Firearm')
+  
+
+library(nlme)
+library(geepack)
+
+total_suicide_model <- gls(AvgDeathsPer100k ~ grade, 
+                           data = avg_deaths.male,
+                           correlation = corExchangeable(form = ~ 1 | State))
+
+# Example GEE for life-course decades
+gee_model <- geeglm(AvgDeathsPer100k ~ PolicyEnv * AgeGroup, 
+                    id = State, 
+                    data = avg_deaths_processed, 
+                    family = gaussian(link = "identity"), 
+                    corstr = "exchangeable")
+
+# Plotting the smoothed trends
+ggplot(avg_deaths_processed, aes(x = as.numeric(AgeGroup), y = AvgDeathsPer100k)) +
+  geom_smooth(aes(color = PolicyEnv), method = "loess") +
+  theme_minimal()
+
 
 
 
