@@ -2,6 +2,7 @@
 # AUTHOR: J. Jameson
 
 ################################################################################
+rm(list = ls())
 
 # Load libraries --------------------------------------------------------------
 library(tidyverse) # for data manipulation 
@@ -38,18 +39,18 @@ cap.1 <- "Source: Centers for Disease Control and Prevention
           and 'Less Strict' refer to Annual Gun Law Scorecard grades as described in text. 
           Trend lines represent smoothed averages of deaths per 100k
           by age, using a LOESS method for non-parametric local 
-          regression. The shading indicates the 95% confidence 
-          interval around the estimate.  In instances of unstable values indicated by 
-          '**' (representing fewer than 20 deaths), the original data points have 
-          been retained to preserve the raw trends. For suppressed values denoted 
-          by '--' (suggesting counts between one to nine or based on specific 
-          statistical criteria), we have imputed a conservative estimate of 5 deaths, 
-          to maintain continuity of the data while acknowledging the inherent uncertainty 
-          of small numbers. Secondary suppressions, marked by '--*', are treated with the 
-          same caution. A sensitivity analysis was subsequently performed to assess the 
-          robustness of our findings, accounting for the potential variability introduced 
-          by these imputations and ensuring the reliability of our conclusions despite the
-          presence of these less stable estimates."
+          regression. Suppressed values (suggesting suicide counts between one and nine or based on specific 
+          statistical criteria) have been dropped."
+
+cap.2 <- "Source: Centers for Disease Control and Prevention 
+          Web-based Injury Statistics Query and Reporting 
+          System (WISQARS), March 2024. 'More Strict' 
+          and 'Less Strict' refer to Annual Gun Law Scorecard grades as described in text. 
+          Trend lines represent smoothed averages of deaths per 100k
+          by age, using a LOESS method for non-parametric local 
+          regression. For suppressed values denoted 
+          by '--' (suggesting suicide counts between one and nine or based on specific 
+          statistical criteria), we have imputed an estimate using the XGBoost model described in text."
 
 #-------------------------------------------------------------------------------
 # Plotting code ----------------------------------------------------------------
@@ -64,7 +65,7 @@ avg_deaths %>%
   facet_wrap(~category) + 
   scale_color_manual(values = pal) + 
   scale_fill_manual(values = pal) + 
-  labs(title = "Average Suicide Deaths per 100,000 by Age",
+  labs(title = "Average Suicide Deaths per 100,000 by Age \n(Dropped Suppressed Values)",
        subtitle = "Data Years: 2015 to 2021, United States, All Races, All Ethnicities",
        caption = str_wrap(cap.1, 170),
        x = "Age",
@@ -73,8 +74,84 @@ avg_deaths %>%
        fill = "Sex",
        linetype = "Annual Gun Law Scorecard") 
 
+ggsave("outputs/figures/figure_1_dropped.png", width = 10, height = 6, dpi = 300)
 
-ggsave("outputs/figures/figure_1.png", width = 10, height = 6, dpi = 300)
+avg_deaths %>%
+  filter(YearGroup == "2015-2021") %>%
+  ggplot(aes(x = Age, 
+             y = AvgDeathsPer100k_impute, 
+             color = Sex, 
+             linetype = grade)) +
+  geom_smooth(aes(fill = Sex), size = 1, method = "loess") + 
+  facet_wrap(~category) + 
+  scale_color_manual(values = pal) + 
+  scale_fill_manual(values = pal) + 
+  labs(title = "Average Suicide Deaths per 100,000 by Age \n(Imputed Suppressed Values)",
+       subtitle = "Data Years: 2015 to 2021, United States, All Races, All Ethnicities",
+       caption = str_wrap(cap.2, 170),
+       x = "Age",
+       y = "Average Suicide Deaths \nper 100,000",
+       color = "Sex",
+       fill = "Sex",
+       linetype = "Annual Gun Law Scorecard") 
+
+ggsave("outputs/figures/figure_1_impute.png", width = 10, height = 6, dpi = 300)
+
+#-------------------------------------------------------------------------------
+
+suicides <- read_csv('outputs/data/suicide_firearm_cleaned.csv')
+suicides
+
+suicides %>%
+  filter(is.na(FirearmDeaths) == F) %>%
+  ggplot(aes(x = FirearmDeaths, 
+             y = Predictions)) +
+  geom_smooth() +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "red") +  # Line where actual equals predicted
+  labs(title = "Predicted vs Actual Firearm Suicides",
+       subtitle = "Data Years: 2015 to 2021, United States, All Races, All Ethnicities",
+       y = "Predicted Firearm Suicide",
+       x = "Actual Firearm Suicide") 
+
+suicides %>%
+  filter(!is.na(FirearmDeaths)) %>%
+  group_by(FirearmDeaths) %>%
+  summarise(
+    MeanPrediction = mean(Predictions, na.rm = TRUE),
+    SE = sd(Predictions, na.rm = TRUE) / sqrt(n()),
+    LowerCI = MeanPrediction - 1.96 * SE, # 95% CI lower bound
+    UpperCI = MeanPrediction + 1.96 * SE  # 95% CI upper bound
+  ) %>%
+  ggplot(aes(x = FirearmDeaths, y = MeanPrediction)) +
+  geom_point(size = 2, color = "#0072B5") +
+  geom_errorbar(aes(ymin = LowerCI, ymax = UpperCI), color = '#0072B5', alpha=.9) +
+  geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = "#BC3C29") +
+  #geom_smooth(size = 0.5, se=F) +
+  xlim(0,30) +
+  ylim(0,30) +
+  labs(title = "Predicted vs Actual Firearm Suicides",
+       subtitle = "Data Years: 2015 to 2021, United States, All Races, All Ethnicities",
+       y = "Predicted Firearm Suicide",
+       x = "Actual Firearm Suicide") +
+  geom_rect(aes(xmin = 1, xmax = 9, ymin = -Inf, ymax = Inf), fill = "grey", alpha = 0.009) +
+  annotate("text", x = 5, y = 20, label = "Suppressed Data", vjust = 2, size = 5, fontface='bold') +
+  annotate("text", x = 20, y = 12, label = "Mean Estimate and \n95% CI for Predicted Value", color = "#0072B5", fontface='bold') +
+  annotate("text", x = 17, y = 25, label = "Red dashed line: \nPredicted = Actual", color = "#BC3C29", fontface='bold') +
+  geom_segment(aes(x = 20, y = 14, xend = 20, yend = 17), color = "#0072B5", 
+               arrow = arrow(type = "open", length = unit(0.05, "inches"))) +
+  geom_segment(aes(x = 20, y = 25, xend = 24, yend = 25), color = "#BC3C29", 
+               arrow = arrow(type = "open", length = unit(0.05, "inches"))) +
+  geom_label(
+    aes(x = 26, y = 2), 
+    hjust = 0,
+    label = sprintf("RMSE: 1.49\nR²: 0.94"),
+    fill = "white",
+    color = "black",
+    size = 6
+  )
+
+ggsave("outputs/figures/predicted_v_actual.png", width = 10, height = 6, dpi = 300)
+
 
 #-------------------------------------------------------------------------------
 
