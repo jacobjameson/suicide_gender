@@ -130,113 +130,172 @@ suicide.firearm <- add_categories(suicide.firearm)
 suicide.nonfirearm <- add_categories(suicide.nonfirearm)
 suicide.all <- add_categories(suicide.all)
 
-#-------------------------------------------------------------------------------
-# Compute crude deaths per 100k for each age -----------------------------------
-# Do this for both imputed and non-imputed values ------------------------------
-
 suicide.firearm$FirearmDeaths_Imputed <- case_when(
-  is.na(suicide.firearm$FirearmDeaths) ~ suicide.firearm$Imputed,
+  is.na(suicide.firearm$FirearmDeaths) ~ suicide.firearm$Predictions,
   TRUE ~ suicide.firearm$FirearmDeaths)
 
 suicide.nonfirearm$NonFirearmDeaths_Imputed <- case_when(
-  is.na(suicide.nonfirearm$NonFirearmDeaths) ~ suicide.nonfirearm$Imputed,
+  is.na(suicide.nonfirearm$NonFirearmDeaths) ~ suicide.nonfirearm$Predictions,
   TRUE ~ suicide.nonfirearm$NonFirearmDeaths)
 
 suicide.all$Deaths_Imputed <- case_when(
-  is.na(suicide.all$Deaths) ~ suicide.all$Imputed,
+  is.na(suicide.all$Deaths) ~ suicide.all$Predictions,
   TRUE ~ suicide.all$Deaths)
+
+write.csv(suicide.firearm, 'outputs/data/suicide_firearm_cleaned.csv')
+write.csv(suicide.nonfirearm, 'outputs/data/suicide_nonfirearm_cleaned.csv')
+write.csv(suicide.all, 'outputs/data/suicide_all_cleaned.csv')
+
+#-------------------------------------------------------------------------------
+# Compute crude deaths per 100k for each age -----------------------------------
+# Do this for both imputed and non-imputed values ------------------------------
 
 ## firearm suicides deaths per 100k
 avg_deaths.firearm.1 <-
   suicide.firearm %>%
   filter(is.na(FirearmDeaths) == F) %>%
   group_by(Age, grade, Sex, YearGroup) %>%
-  summarise(AvgDeathsPer100k_impute = sum(FirearmDeaths_Imputed, na.rm=T) / 
-              sum(Population, na.rm=T) * 100000,
-            groups = 'drop') %>%
+  summarise(AvgDeathsPer100k = sum(FirearmDeaths_Imputed) / 
+              sum(Population) * 100000) %>%
+  ungroup() %>%
   mutate(category = 'Firearm')
   
-
-
-avg_deaths.firearm <- 
+avg_deaths.firearm.2 <-
   suicide.firearm %>%
+  filter(is.na(FirearmDeaths) == T) %>%
   group_by(Age, grade, Sex, YearGroup) %>%
-  summarise(AvgDeathsPer100k_impute = sum(FirearmDeaths_Imputed, na.rm=T) / 
-              sum(Population, na.rm=T) * 100000,
-            AvgDeathsPer100k = sum(FirearmDeaths, na.rm=T) / 
-              sum(Population, na.rm=T) * 100000,
-            .groups = 'drop') %>%
+  summarise(AvgDeathsPer100k_impute = sum(FirearmDeaths_Imputed) / 
+              sum(Population) * 100000) %>%
+  ungroup() %>%
   mutate(category = 'Firearm')
 
+avg_deaths.firearm <- merge(avg_deaths.firearm.1, avg_deaths.firearm.2)
 
+#----------
 
-#-------------------------------------------------------------------------------
-# Compute crude deaths per 100k for each age -----------------------------------
-
-## firearm suicides
-avg_deaths.firearm <- 
-  suicide.firearm %>%
-  group_by(Age, grade, Sex, YearGroup) %>%
-  summarise(AvgDeathsPer100k = sum(FirearmDeaths, na.rm=T) / 
-              sum(Population, na.rm=T) * 100000,
-            .groups = 'drop') %>%
-  mutate(category = 'Firearm')
-
-## non-firearm suicides
-avg_deaths.nonfirearm <- 
+## Nonfirearm suicides deaths per 100k
+avg_deaths.nonfirearm.1 <-
   suicide.nonfirearm %>%
+  filter(is.na(NonFirearmDeaths) == F) %>%
   group_by(Age, grade, Sex, YearGroup) %>%
-  summarise(AvgDeathsPer100k = sum(NonFirearmDeaths, na.rm=T) / 
-              sum(Population, na.rm=T) * 100000,
-            .groups = 'drop') %>%
-  mutate(category = 'Non-Firearm')
+  summarise(AvgDeathsPer100k = sum(NonFirearmDeaths_Imputed) / 
+              sum(Population) * 100000) %>%
+  ungroup() %>%
+  mutate(category = 'NonFirearm')
 
-## total suicides
-avg_deaths.all <- 
-  suicide.all %>%
+avg_deaths.nonfirearm.2 <-
+  suicide.nonfirearm %>%
+  filter(is.na(NonFirearmDeaths) == T) %>%
   group_by(Age, grade, Sex, YearGroup) %>%
-  summarise(AvgDeathsPer100k = sum(Deaths, na.rm=T) / 
-              sum(Population, na.rm=T) * 100000,
-            .groups = 'drop') %>%
+  summarise(AvgDeathsPer100k_impute = sum(NonFirearmDeaths_Imputed) / 
+              sum(Population) * 100000) %>%
+  ungroup() %>%
+  mutate(category = 'NonFirearm')
+
+avg_deaths.nonfirearm <- merge(avg_deaths.nonfirearm.1, avg_deaths.nonfirearm.2)
+
+#----------
+
+## All suicides deaths per 100k
+avg_deaths.all.1 <-
+  suicide.all %>%
+  filter(is.na(Deaths) == F) %>%
+  group_by(Age, grade, Sex, YearGroup) %>%
+  summarise(AvgDeathsPer100k = sum(Deaths_Imputed) / 
+              sum(Population) * 100000) %>%
+  ungroup() %>%
   mutate(category = 'All')
 
+avg_deaths.all.2 <-
+  suicide.all %>%
+  filter(is.na(Deaths) == T) %>%
+  group_by(Age, grade, Sex, YearGroup) %>%
+  summarise(AvgDeathsPer100k_impute = sum(Deaths_Imputed) / 
+              sum(Population) * 100000) %>%
+  ungroup() %>%
+  mutate(category = 'All')
+
+avg_deaths.all <- merge(avg_deaths.all.1, avg_deaths.all.2)
+
+#----------
 ## bind together
 avg_deaths <- bind_rows(
   avg_deaths.firearm, avg_deaths.nonfirearm, avg_deaths.all
-  )
+)
 
 write.csv(avg_deaths, 'outputs/data/deaths_cleaned_age.csv')
 
 #-------------------------------------------------------------------------------
 # Compute crude deaths per 100k for each age decile ----------------------------
 
-## firearm suicides
-avg_deaths.firearm <- 
+## firearm suicides deaths per 100k
+avg_deaths.firearm.1 <-
   suicide.firearm %>%
+  filter(is.na(FirearmDeaths) == F) %>%
   group_by(AgeGroup, grade, Sex, YearGroup) %>%
-  summarise(AvgDeathsPer100k = sum(FirearmDeaths, na.rm=T) / 
-              sum(Population, na.rm=T) * 100000,
-            .groups = 'drop') %>%
+  summarise(AvgDeathsPer100k = sum(FirearmDeaths_Imputed) / 
+              sum(Population) * 100000) %>%
+  ungroup() %>%
   mutate(category = 'Firearm')
 
-## non-firearm suicides
-avg_deaths.nonfirearm <- 
-  suicide.nonfirearm %>%
+avg_deaths.firearm.2 <-
+  suicide.firearm %>%
+  filter(is.na(FirearmDeaths) == T) %>%
   group_by(AgeGroup, grade, Sex, YearGroup) %>%
-  summarise(AvgDeathsPer100k = sum(NonFirearmDeaths, na.rm=T) / 
-              sum(Population, na.rm=T) * 100000,
-            .groups = 'drop') %>%
-  mutate(category = 'Non-Firearm')
+  summarise(AvgDeathsPer100k_impute = sum(FirearmDeaths_Imputed) / 
+              sum(Population) * 100000) %>%
+  ungroup() %>%
+  mutate(category = 'Firearm')
 
-## total suicides
-avg_deaths.all <- 
-  suicide.all %>%
+avg_deaths.firearm <- merge(avg_deaths.firearm.1, avg_deaths.firearm.2)
+
+#----------
+
+## Nonfirearm suicides deaths per 100k
+avg_deaths.nonfirearm.1 <-
+  suicide.nonfirearm %>%
+  filter(is.na(NonFirearmDeaths) == F) %>%
   group_by(AgeGroup, grade, Sex, YearGroup) %>%
-  summarise(AvgDeathsPer100k = sum(Deaths, na.rm=T) / 
-              sum(Population, na.rm=T) * 100000,
-            .groups = 'drop') %>%
+  summarise(AvgDeathsPer100k = sum(NonFirearmDeaths_Imputed) / 
+              sum(Population) * 100000) %>%
+  ungroup() %>%
+  mutate(category = 'NonFirearm')
+
+avg_deaths.nonfirearm.2 <-
+  suicide.nonfirearm %>%
+  filter(is.na(NonFirearmDeaths) == T) %>%
+  group_by(AgeGroup, grade, Sex, YearGroup) %>%
+  summarise(AvgDeathsPer100k_impute = sum(NonFirearmDeaths_Imputed) / 
+              sum(Population) * 100000) %>%
+  ungroup() %>%
+  mutate(category = 'NonFirearm')
+
+avg_deaths.nonfirearm <- merge(avg_deaths.nonfirearm.1, avg_deaths.nonfirearm.2)
+
+#----------
+
+## All suicides deaths per 100k
+avg_deaths.all.1 <-
+  suicide.all %>%
+  filter(is.na(Deaths) == F) %>%
+  group_by(AgeGroup, grade, Sex, YearGroup) %>%
+  summarise(AvgDeathsPer100k = sum(Deaths_Imputed) / 
+              sum(Population) * 100000) %>%
+  ungroup() %>%
   mutate(category = 'All')
 
+avg_deaths.all.2 <-
+  suicide.all %>%
+  filter(is.na(Deaths) == T) %>%
+  group_by(AgeGroup, grade, Sex, YearGroup) %>%
+  summarise(AvgDeathsPer100k_impute = sum(Deaths_Imputed) / 
+              sum(Population) * 100000) %>%
+  ungroup() %>%
+  mutate(category = 'All')
+
+avg_deaths.all <- merge(avg_deaths.all.1, avg_deaths.all.2)
+
+#----------
 ## bind together
 avg_deaths <- bind_rows(
   avg_deaths.firearm, avg_deaths.nonfirearm, avg_deaths.all
