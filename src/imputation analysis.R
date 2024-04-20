@@ -1,12 +1,27 @@
+################################################################################
+# AUTHOR: J. Jameson
+
+# DESCRIPTION: This script contains a function that performs imputation using 
+# XGBoost regression. The function takes a dataset and a target variable as
+# input, and returns the dataset with imputed values for the target variable.
+# The function also outputs a CSV file containing the model specifications and
+# performance metrics. The imputation is done using XGBoost regression with
+# grid search and cross-validation for hyperparameter tuning.
+################################################################################
+
+# Load required libraries
 library(xgboost)
-library(caret)
+library(keras)
 library(dplyr)
 library(tidyr)
+library(caret)
+library(randomForest)
 
+# Function to perform imputation using XGBoost regression with grid search and CV
 xg_imputation_verbose <- function(data, y_variable) {
   # Prepare the dataset by converting character columns to factors
   data <- data %>%
-    mutate(across(where(is.character), factor))
+    mutate(across(where(is.character), factor)) 
   
   # Split data into non-suppressed (with target variable) and 
   # suppressed (without target variable)
@@ -33,17 +48,18 @@ xg_imputation_verbose <- function(data, y_variable) {
                                 search = "grid", 
                                 verboseIter = TRUE, 
                                 summaryFunction = defaultSummary)
+  
   tune_grid <- expand.grid(
     nrounds = c(50, 100),
     max_depth = c(3, 6),
     eta = c(0.01, 0.1),
     gamma = c(0),
-    colsample_bytree = c(0.5),
-    min_child_weight = c(1, 2),
-    subsample = c(0.8)
+    colsample_bytree = c(0.5, 0.8),
+    min_child_weight = c(1, 3),
+    subsample = c(0.5, 0.8)
   )
   
-
+  
   # Train the model on non-suppressed data using 'caret' for grid search and CV
   xgb_model <- train(
     model_formula, data = non_suppressed_data,
@@ -57,7 +73,7 @@ xg_imputation_verbose <- function(data, y_variable) {
   best_model_specs <- xgb_model$bestTune
   cv_metrics <- xgb_model$results %>%
     filter(RMSE == min(RMSE)) %>%
-    select(RMSE, Rsquared, MAE) %>%
+    dplyr::select(RMSE, Rsquared, MAE) %>%
     dplyr::slice(1) %>%
     mutate(Model = "XGBoost", 
            Best_nrounds = best_model_specs$nrounds, 
@@ -90,5 +106,65 @@ xg_imputation_verbose <- function(data, y_variable) {
   return(combined_results)
 }
 
-# Example usage:
-# imputed_data <- xg_imputation_verbose(your_data, "YourTargetVariableName")
+
+# Function to perform imputation using RandomForest
+rf_imputation <- function(data, y_variable) {
+  # Prepare the dataset by converting character columns to factors
+  data <- data %>%
+    mutate(across(where(is.character), factor)) 
+  
+  # Re-separate combined data back to consistent factor level dataframes
+  non_suppressed_data <- filter(data, !is.na(.data[[y_variable]]))
+  suppressed_data <- filter(data, is.na(.data[[y_variable]]))
+  
+  # Define predictors and model formula
+  predictors <- setdiff(names(non_suppressed_data), y_variable)
+  model_formula <- reformulate(predictors, response = y_variable)
+  
+  
+  # Setup for 5-fold CV and grid search with parameter grid and verbose output
+  train_control <- trainControl(method = "cv", number = 5, 
+                                search = "grid", 
+                                verboseIter = TRUE, 
+                                summaryFunction = defaultSummary)
+  
+  # Train the model on non-suppressed data using 'caret' for grid search and CV
+  rf_model <- train(
+    model_formula, 
+    data = non_suppressed_data,
+    method = "rf",
+    trControl = train_control,
+    metric = "RMSE"
+  )
+  
+  # Extract model performance metrics
+  best_model_specs <- rf_model$bestTune
+  cv_metrics <- rf_model$results %>%
+    filter(RMSE == min(RMSE)) %>%
+    dplyr::select(RMSE, Rsquared, MAE) %>%
+    dplyr::slice(1) %>%
+    mutate(Model = "RandomForest", 
+           Best_mtry = best_model_specs$mtry)
+  
+  # Write model specifications and performance metrics to CSV
+  write.csv(cv_metrics, 
+            paste0('outputs/tables/RandomForest Performance_', y_variable, '.csv'), 
+            row.names = FALSE)
+  
+  # Predict for both non-suppressed and suppressed data using the best model
+  non_suppressed_data$Predictions <- predict(rf_model, newdata = non_suppressed_data)
+  non_suppressed_data$Predictions <- round(pmax(non_suppressed_data$Predictions, 0))
+  
+  if (nrow(suppressed_data) > 0) {
+    suppressed_data$Predictions <- predict(rf_model, newdata = suppressed_data)
+    suppressed_data$Predictions <- round(pmax(pmin(suppressed_data$Predictions, 9), 1))
+  } else {
+    suppressed_data$Predictions <- NA
+  }
+  
+  # Combine and return the results
+  combined_results <- bind_rows(non_suppressed_data, suppressed_data)
+  
+  return(combined_results)
+}
+

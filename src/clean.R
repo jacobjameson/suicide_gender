@@ -1,6 +1,10 @@
 ################################################################################
 # AUTHOR: J. Jameson
 
+# DESCRIPTION: This script reads in the raw data files and cleans them for
+# analysis. The cleaned data is then saved as a .csv file in the outputs/data
+# folder. The script also contains a function to impute missing values using
+# XGBoost. 
 ################################################################################
 rm(list = ls())
 
@@ -8,7 +12,7 @@ rm(list = ls())
 library(tidyverse) # for data manipulation 
 
 #-------------------------------------------------------------------------------
-# Prepare scorecard data for merging -------------------------------------------
+# Prepare data for merging -------------------------------------------
 
 scores <- read_csv("raw/2023_scorecard.csv")
 
@@ -23,6 +27,34 @@ scores <- scores %>%
     TRUE ~ 'Less Strict')
     ) %>%
   dplyr::select(State, grade, Grade)
+
+## aggregate data used to improve estimates:
+suicides.aggregate <- read.csv(
+  "raw/suicide_reports_aggregate.csv"
+)
+
+end <- nrow(suicides.aggregate) - 16
+suicides.aggregate <- suicides.aggregate[c(1 : end),]
+
+suicides.aggregate$Deaths <- gsub("\\*\\*", "", suicides.aggregate$Deaths) 
+
+suicides.aggregate$Deaths <- gsub(",", "", suicides.aggregate$Deaths)
+suicides.aggregate$Population <- gsub(",", "", suicides.aggregate$Population) 
+suicides.aggregate$Population <- as.numeric(suicides.aggregate$Population)
+
+suicides.aggregate$Deaths <- ifelse(
+  suicides.aggregate$Deaths == '--', 
+  5, 
+  suicides.aggregate$Deaths
+)
+
+suicides.aggregate$Deaths <- as.numeric(suicides.aggregate$Deaths)
+suicides.aggregate$Year <- as.numeric(suicides.aggregate$Year)
+
+suicides.aggregate <- suicides.aggregate %>%
+  mutate(Age.Group = ifelse(
+    Age.Group == '75 to 79', '75 to 80', Age.Group)) %>%
+  select('Age.Group', 'State', agg_deaths_by_agegroup = 'Deaths', 'Year')
 
 #-------------------------------------------------------------------------------
 # Cleaning function ------------------------------------------------------------
@@ -71,8 +103,28 @@ clean_suicide_data <- function(file_path, replace_suppressed = NA) {
     dplyr::select(State, Year, Age, Sex, Deaths, Population, Grade) %>%
     filter(Age >= 12, Age <= 80)
   
+  breaks <- c(10, 14, 19, 24, 29, 34, 39, 44, 49, 54, 59, 64, 69, 74, Inf)
+  
+  # Define the labels for the age groups
+  labels <- c("10 to 14", "15 to 19", "20 to 24", "25 to 29", 
+              "30 to 34", "35 to 39", 
+              "40 to 44", "45 to 49", "50 to 54", 
+              "55 to 59", "60 to 64", 
+              "65 to 69", "70 to 74", "75 to 80")
+  
+  # Create the Age.Group column
+  suicide_data$Age.Group <- cut(suicide_data$Age, breaks = breaks, 
+                                labels = labels, right = FALSE)
+  
+  suicide_data$Age.Group <- as.character(suicide_data$Age.Group)
+  
+  suicide_data <- merge(suicide_data, suicides.aggregate,
+                        on=c('State', 'Year', 'Age.Group')) %>%
+    dplyr:: select(-Age.Group)
+  
   return(suicide_data)
 }
+
 
 #-------------------------------------------------------------------------------
 # Read in and clean data -------------------------------------------------------
@@ -100,6 +152,7 @@ suicide.all <- clean_suicide_data(
 #-------------------------------------------------------------------------------
 # XGBoost Imputation
 source('src/imputation analysis.R')
+
 
 suicide.firearm <- xg_imputation_verbose(suicide.firearm, 'FirearmDeaths')
 suicide.nonfirearm <- xg_imputation_verbose(suicide.nonfirearm, 'NonFirearmDeaths')
@@ -302,5 +355,4 @@ avg_deaths <- bind_rows(
 )
 
 write.csv(avg_deaths, 'outputs/data/deaths_cleaned_age_decile.csv')
-
 ################################################################################
