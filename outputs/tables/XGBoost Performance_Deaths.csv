@@ -1,2 +1,0 @@
-"RMSE","Rsquared","MAE","Model","Best_nrounds","Best_max_depth","Best_eta","Best_gamma","Best_colsample_bytree","Best_min_child_weight","Best_subsample"
-2.71247430885798,0.948367945465999,1.44692027088753,"XGBoost",100,6,0.1,0,0.8,3,0.8
