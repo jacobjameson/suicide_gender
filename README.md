@@ -27,16 +27,6 @@ Analysis of U.S. suicide rates by sex, age, and state policy environment.
 - `figures.R`: Generate figures
 - `tables.R`: Produce tables
 
-## Usage
-
-1. Clone repository
-2. Open `suicide_gender.Rproj` in RStudio
-3. Run scripts in `src/` in order:
-   - `prepare_WISQARS.R`
-   - `prepare_WONDER.R`
-   - `figures.R`
-   - `tables.R`
-
 ## Requirements
 
 - R (4.0.0+)
