@@ -1,6 +1,6 @@
-# Suicide Gender Analysis Project
+# Sex-Differences in Age Trends and State Disparities in U.S. Firearm-Related Suicide, 2001-2021
 
-Analysis of U.S. suicide rates by gender, age, and firearm usage.
+Analysis of U.S. suicide rates by sex, age, and state policy environment.
 
 ## Structure
 
