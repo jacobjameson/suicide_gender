@@ -13,11 +13,11 @@ library(ggthemes)
 year_colors <- c(
   "2001-2007" = "grey70",
   "2008-2014" = "grey30",
-  "2015-2022" = "#B10000"
+  "2015-2022" = "#780606"
 )
 
 gun_colors <- c(
-  "Permissive" = "#B10000",
+  "Permissive" = "#780606",
   "Strict" = "grey70"
 )
 
@@ -53,7 +53,7 @@ create_figure1 <- function(data) {
     filter(Mechanism != 'Total') %>%
     mutate(Years = YearGroup) %>%
     ggplot(aes(x = Age, y = CR, linetype = Sex, color = Years)) +
-    geom_smooth(aes(fill = Years), size = 2, method = "loess", alpha = 0.5) +
+    geom_smooth(aes(fill = Years), size = 2, method = "loess", alpha = 0.6) +
     facet_wrap(~Mechanism) +
     scale_y_continuous(breaks = seq(0, 40, 5)) +
     scale_color_manual(values = year_colors) +
@@ -85,7 +85,7 @@ create_figure2 <- function(data) {
     scale_color_manual(values = gun_colors) +
     scale_fill_manual(values = gun_colors) +
     scale_linetype_manual(values = c('dotted', 'solid')) +
-    geom_smooth(aes(fill = grade), size = 2, method = "loess", alpha = 0.5) +
+    geom_smooth(aes(fill = grade), size = 2, method = "loess", alpha = 0.6) +
     facet_wrap(~mech) +
     scale_y_continuous(breaks = seq(0, 50, 5)) +
     labs(
