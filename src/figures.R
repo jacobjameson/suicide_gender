@@ -13,7 +13,7 @@ library(ggthemes)
 year_colors <- c(
   "2001-2007" = "grey70",
   "2008-2014" = "grey30",
-  "2015-2022" = "#B100000"
+  "2015-2022" = "#780606"
 )
 
 gun_colors <- c(
